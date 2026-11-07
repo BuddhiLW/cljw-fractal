@@ -1,0 +1,96 @@
+name: cljw-bump
+
+# Follow the latest cljw release automatically. Daily (and on demand): resolve
+# the newest BuddhiLW/ClojureWasm release; if it differs from the Dockerfile's
+# ARG CLJW_VERSION / CLJW_SHA256 defaults, verify the tarball, rewrite every
+# pin, commit to main, then build + push the image through image.yml (a push
+# made with GITHUB_TOKEN triggers no other workflow, so it is called directly).
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  attestations: read
+
+concurrency:
+  group: cljw-bump
+  cancel-in-progress: false
+
+env:
+  CLJW_REPO: BuddhiLW/ClojureWasm
+  ASSET: cljw-linux-x86_64.tar.gz
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.bump.outputs.changed }}
+      sha: ${{ steps.bump.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - name: Bump cljw if a newer release exists
+        id: bump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$(gh release view -R "$CLJW_REPO" --json tagName --jq .tagName)"
+          base="https://github.com/${CLJW_REPO}/releases/download/${tag}/${ASSET}"
+          work="$(mktemp -d)"
+          curl -fsSLo "$work/$ASSET.sha256" "$base.sha256"
+          sha="$(cut -d' ' -f1 "$work/$ASSET.sha256")"
+          [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "bad sha256 sidecar: $sha" >&2; exit 1; }
+
+          cur_tag="$(awk -F= '/^ARG CLJW_VERSION=/ {print $2}' Dockerfile)"
+          cur_sha="$(awk -F= '/^ARG CLJW_SHA256=/ {print $2}' Dockerfile)"
+          echo "latest: $tag $sha"
+          echo "pinned: $cur_tag $cur_sha"
+          if [[ "$tag" == "$cur_tag" && "$sha" == "$cur_sha" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          curl -fsSLo "$work/$ASSET" "$base"
+          ( cd "$work" && sha256sum -c "$ASSET.sha256" )
+
+          # Releases before v1.15.3 carry no build provenance: a 404 here
+          # warns and continues; once attestations exist, verification is fatal.
+          if out="$(gh api "repos/${CLJW_REPO}/attestations/sha256:${sha}" 2>&1)"; then
+            gh attestation verify "$work/$ASSET" -R "$CLJW_REPO"
+          elif grep -q 'HTTP 404' <<<"$out"; then
+            echo "::warning::${tag} has no attestation for ${ASSET}; sha256 verified only"
+          else
+            echo "$out" >&2
+            exit 1
+          fi
+
+          bash scripts/check_version_pins.sh --set-cljw "$tag"
+          SHA="$sha" perl -pi -e 's/^ARG CLJW_SHA256=.*/ARG CLJW_SHA256=$ENV{SHA}/' Dockerfile
+          bash scripts/check_version_pins.sh
+          grep -qx "ARG CLJW_SHA256=${sha}" Dockerfile
+          trap 'rm -rf "$work"' EXIT
+          tar -xzf "$work/$ASSET" -C "$work" cljw
+          CLJW_BIN="$work/cljw" bash scripts/phase16_fractal_server.sh
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Dockerfile run_local.sh README.md DEPLOY.md
+          git commit -m "chore: cljw ${tag}"
+          git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  image:
+    needs: bump
+    if: needs.bump.outputs.changed == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
