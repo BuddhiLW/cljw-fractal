@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-CLJW_VERSION="${CLJW_VERSION:-v1.15.5}"
+CLJW_VERSION="${CLJW_VERSION:-v1.15.6}"
 CACHE_DIR="/tmp/cljw-fractal/cljw-$CLJW_VERSION"
 CLJW="${CLJW:-$CACHE_DIR/cljw}"
 
