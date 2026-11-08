@@ -15,6 +15,12 @@ var framebuffer: [capacity * 4]u8 = undefined;
 var view_cx: f64 = -0.5;
 var view_cy: f64 = 0;
 var view_scale: f64 = 3.5 / 512.0;
+const orbit_capacity = 65536;
+var reference_orbit: [orbit_capacity][2]f64 = undefined;
+var reference_len: usize = 0;
+var delta_cx: f64 = 0;
+var delta_cy: f64 = 0;
+var delta_scale: f64 = 0;
 
 export fn set_view(cx: f64, cy: f64, scale: f64) i32 {
     view_cx = cx;
@@ -74,6 +80,68 @@ export fn render(w: i32, h: i32, max_iter: i32) i64 {
             }
             total += n;
             color(y * @as(usize, @intCast(w)) + x, n, limit, zr * zr + zi * zi);
+        }
+    }
+    return total;
+}
+
+export fn orbit_ptr() usize {
+    return @intFromPtr(&reference_orbit);
+}
+
+export fn orbit_cap() i32 {
+    return orbit_capacity;
+}
+
+export fn set_ref(n: i32) i32 {
+    if (n < 1 or n > orbit_capacity) return -1;
+    reference_len = @intCast(n);
+    return 0;
+}
+
+export fn set_delta(dcx: f64, dcy: f64, scale: f64) i32 {
+    delta_cx = dcx;
+    delta_cy = dcy;
+    delta_scale = scale;
+    return if (std.math.isFinite(dcx) and std.math.isFinite(dcy) and std.math.isFinite(scale)) 0 else -1;
+}
+
+export fn render_perturb(w: i32, h: i32, max_iter: i32) i64 {
+    const cx = delta_cx;
+    const cy = delta_cy;
+    const scale = delta_scale;
+    if (reference_len < 2 or !valid(cx, cy, scale, w, h, max_iter)) return -1;
+    const limit: u32 = @intCast(@min(max_iter, (1 << 26) - 1));
+    const width: usize = @intCast(w);
+    var total: i64 = 0;
+    var y: usize = 0;
+    while (y < @as(usize, @intCast(h))) : (y += 1) {
+        const dci = cy + (@as(f64, @floatFromInt(y)) - @as(f64, @floatFromInt(h)) / 2.0) * scale;
+        var x: usize = 0;
+        while (x < width) : (x += 1) {
+            const dcr = cx + (@as(f64, @floatFromInt(x)) - @as(f64, @floatFromInt(w)) / 2.0) * scale;
+            var dr: f64 = 0;
+            var di: f64 = 0;
+            var zr: f64 = 0;
+            var zi: f64 = 0;
+            var m: usize = 0;
+            var n: u32 = 0;
+            while (n < limit and zr * zr + zi * zi <= 4.0) : (n += 1) {
+                const ref = reference_orbit[m];
+                const next = (2.0 * ref[0]) * dr - (2.0 * ref[1]) * di + (dr * dr - di * di) + dcr;
+                di = (2.0 * ref[0]) * di + (2.0 * ref[1]) * dr + (2.0 * dr) * di + dci;
+                dr = next;
+                m += 1;
+                zr = reference_orbit[m][0] + dr;
+                zi = reference_orbit[m][1] + di;
+                if (zr * zr + zi * zi < dr * dr + di * di or m == reference_len - 1) {
+                    dr = zr;
+                    di = zi;
+                    m = 0;
+                }
+            }
+            total += n;
+            color(y * width + x, n, limit, zr * zr + zi * zi);
         }
     }
     return total;
