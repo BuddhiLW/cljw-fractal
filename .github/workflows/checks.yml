@@ -1,0 +1,57 @@
+name: checks
+
+# Keep every documented cljw pin in sync, then use the same verified release
+# binary as the image for kernel parity and real HTTP checks. No cljw build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  version-pins:
+    name: version pins agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - run: bash scripts/check_version_pins.sh
+
+  fractal:
+    name: kernel parity and server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Fetch and verify the pinned cljw release
+        run: |
+          set -euo pipefail
+          tag="$(awk -F= '/^ARG CLJW_VERSION=/ {print $2}' Dockerfile)"
+          sha="$(awk -F= '/^ARG CLJW_SHA256=/ {print $2}' Dockerfile)"
+          [[ "$sha" =~ ^[0-9a-f]{64}$ ]]
+          work="$RUNNER_TEMP/fractal-cljw"
+          mkdir -p "$work"
+          curl -fsSLo "$work/cljw.tar.gz" \
+            "https://github.com/BuddhiLW/ClojureWasm/releases/download/${tag}/cljw-linux-x86_64.tar.gz"
+          echo "$sha  $work/cljw.tar.gz" | sha256sum -c -
+          tar -xzf "$work/cljw.tar.gz" -C "$work" cljw
+          "$work/cljw" --version
+          echo "CLJW_BIN=$work/cljw" >> "$GITHUB_ENV"
+      - name: Fetch and verify Zig for artifact reproducibility
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/fractal-zig"
+          mkdir -p "$work"
+          curl -fsSLo "$work/zig.tar.xz" \
+            https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz
+          echo "70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  $work/zig.tar.xz" | sha256sum -c -
+          tar -xJf "$work/zig.tar.xz" -C "$work" --strip-components=1
+          "$work/zig" version
+          echo "$work" >> "$GITHUB_PATH"
+      - name: Committed kernel parity and byte-identical rebuild
+        run: bash scripts/phase16_fractal_kernel.sh
+      - name: Browser-compatible WebAssembly oracle
+        run: node verify.mjs
+      - name: HTTP routes, configuration, and engine parity
+        run: bash scripts/phase16_fractal_server.sh

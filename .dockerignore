@@ -1,0 +1,6 @@
+**
+!Dockerfile
+!server.clj
+!index.html
+!kernel.wasm
+!kernel_simd.wasm
