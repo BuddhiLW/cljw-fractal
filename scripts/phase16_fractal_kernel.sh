@@ -23,6 +23,7 @@ trap 'rm -rf "$scratch"' EXIT
 
 # Work in scratch, never modify committed artifacts or a contributor's files.
 cp "$DEMO/bench.clj" "$DEMO/kernel.zig" "$DEMO/kernel.wasm" "$DEMO/kernel_simd.wasm" "$scratch/"
+cp -R "$DEMO/fixtures" "$scratch/"
 out="$(cd "$scratch" && FRACTAL_DIR="$scratch" CLJW_FRACTAL_CI=1 run_bounded 60 "$BIN" ./bench.clj 2>&1)" \
   || fail "committed artifact parity failed:
 $out"
