@@ -13,7 +13,7 @@ This standalone demo follows the maintained
 [cw-playground](https://github.com/clojurewasm/cw-playground) conventions:
 a pinned, sha256-verified cljw release, committed Wasm artifacts, a non-root
 container, and daily release-following automation. The runtime pin is cljw
-`v1.15.6` (ReleaseSafe with Wasm support). Runtime releases, not source builds,
+`v1.15.7` (ReleaseSafe with Wasm support). Runtime releases, not source builds,
 are used for the image and CI.
 
 ## What's inside
