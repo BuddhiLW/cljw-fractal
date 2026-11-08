@@ -14,6 +14,13 @@ run_bounded() {
   elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
   else fail "timeout or gtimeout is required"; fi
 }
+# For a backgrounded subshell: exec replaces the subshell, so $! is the
+# timeout process and a kill reaches the server through it.
+exec_bounded() {
+  local secs="$1"; shift
+  if command -v timeout >/dev/null 2>&1; then exec timeout "$secs" "$@"
+  else exec gtimeout "$secs" "$@"; fi
+}
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/cljw_fractal_srv_XXXXXX")"
 SRV=""
@@ -22,6 +29,11 @@ stop_server() {
     kill "$SRV" 2>/dev/null || true
     wait "$SRV" 2>/dev/null || true
     SRV=""
+    for _ in $(seq 1 50); do
+      curl -fsS --max-time 1 -o /dev/null "$BASE/healthz" 2>/dev/null || return 0
+      sleep 0.1
+    done
+    fail "previous server still answers at $BASE after stop"
   fi
 }
 cleanup() { stop_server; rm -rf "$scratch"; }
@@ -32,7 +44,7 @@ wait_server() {
     if curl -fsS --max-time 2 -o /dev/null "$BASE/healthz" 2>/dev/null; then up=1; break; fi
     sleep 0.1
   done
-  [[ "$up" == 1 ]] || fail "server did not come up at $BASE; see $scratch/server.log"
+  [[ "$up" == 1 ]] || { tail -5 "$scratch/server.log" >&2; fail "server did not come up at $BASE"; }
 }
 
 if [[ -z "${FRACTAL_BASE_URL:-}" ]]; then
@@ -46,7 +58,7 @@ if [[ -z "${FRACTAL_BASE_URL:-}" ]]; then
   printf '\n<!-- FRACTAL_DIR override -->\n' >> "$scratch/app/index.html"
   # Different cwd and app root; the CLI port must override FRACTAL_PORT.
   (cd "$scratch" && FRACTAL_DIR="$scratch/app" FRACTAL_PORT="$((PORT + 1))" \
-    run_bounded 120 "$BIN" "$DEMO/server.clj" "$PORT") >"$scratch/server.log" 2>&1 &
+    exec_bounded 120 "$BIN" "$DEMO/server.clj" "$PORT") >"$scratch/server.log" 2>&1 &
   SRV=$!
 fi
 wait_server
@@ -101,8 +113,8 @@ echo "PASS fractal-server-bad-engine -> 400"
 if [[ -z "${FRACTAL_BASE_URL:-}" ]]; then
   stop_server
   # No CLI port or FRACTAL_DIR: read assets relative to the script, not cwd.
-  (cd "$scratch" && env -u FRACTAL_DIR FRACTAL_PORT="$PORT" \
-    run_bounded 120 "$BIN" "$DEMO/server.clj") >"$scratch/server.log" 2>&1 &
+  (cd "$scratch" && unset FRACTAL_DIR && export FRACTAL_PORT="$PORT" &&
+    exec_bounded 120 "$BIN" "$DEMO/server.clj") >"$scratch/server.log" 2>&1 &
   SRV=$!
   wait_server
   curl -fsS --max-time 10 -o "$scratch/default-page.html" "$BASE/"
