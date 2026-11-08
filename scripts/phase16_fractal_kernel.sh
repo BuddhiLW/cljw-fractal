@@ -28,14 +28,15 @@ out="$(cd "$scratch" && FRACTAL_DIR="$scratch" CLJW_FRACTAL_CI=1 run_bounded 60 
   || fail "committed artifact parity failed:
 $out"
 for marker in "PASS scalar artifact: strict engine and vector-source parity" \
-              "PASS simd128 JIT strict parity"; do
+              "PASS simd128 JIT strict parity" \
+              "PASS perturbation: byte-identical scalar JIT/interp and simd128 JIT"; do
   grep -qF "$marker" <<<"$out" || fail "missing $marker:
 $out"
 done
-# CI selects reduced views only, with exactly 18 frame comparisons.
-[ "$(grep -c '^:.* checksum ' <<<"$out")" -eq 18 ] || fail "expected 18 parity frames:
+# CI selects reduced views only: 18 plain frames + 9 perturbed (3 views x 3 engines).
+[ "$(grep -c '^:.* checksum ' <<<"$out")" -eq 27 ] || fail "expected 27 parity frames:
 $out"
-echo "PASS fractal-kernel-committed -> 18 frames, scalar JIT/interp and simd128 JIT parity"
+echo "PASS fractal-kernel-committed -> 27 frames, scalar JIT/interp and simd128 JIT parity, perturbation included"
 
 [[ "$(zig version)" == "0.16.0" ]] || fail "header recipes require Zig 0.16.0"
 rm "$scratch/kernel.wasm" "$scratch/kernel_simd.wasm"
