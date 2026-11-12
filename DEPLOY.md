@@ -2,7 +2,7 @@
 
 The app is self-contained. `cljw` is the pinned release binary of
 [BuddhiLW/ClojureWasm](https://github.com/BuddhiLW/ClojureWasm/releases)
-(`v1.15.7`, ReleaseSafe with the Wasm FFI), checked against a pinned sha256.
+(`v1.15.8`, ReleaseSafe with the Wasm FFI), checked against a pinned sha256.
 The page and both Wasm kernels are committed artifacts, with no frontend build
 or cljw source build in the image. See [`PROVENANCE.md`](./PROVENANCE.md).
 

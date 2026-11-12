@@ -10,8 +10,8 @@
 
 # --- Stage 1: fetch + verify the cljw release binary ---
 FROM debian:bookworm-slim AS cljw
-ARG CLJW_VERSION=v1.15.7
-ARG CLJW_SHA256=b70689236733c7ab5e18988b030ae4fc6eac88d48b2fd6e25896816fc1b87f7e
+ARG CLJW_VERSION=v1.15.8
+ARG CLJW_SHA256=22301d2c93eceb0ddf0d5bda7e84e268b19d58ee142ef8b9fb3afebd00584104
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl && rm -rf /var/lib/apt/lists/*
 WORKDIR /dl
